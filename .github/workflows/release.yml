@@ -65,7 +65,8 @@ jobs:
   macos:
     name: macOS universal
     needs: version
-    runs-on: macos-15-xlarge  # M2 Pro larger runner; use only in release.yml (actions_macos_xl budget caps spend)
+    runs-on: macos-15  # Fork releases lack larger-runner access (and signing secrets), so use a
+    # standard runner here; upstream keeps macos-15-xlarge for speed. Unsigned build with a warning.
     environment: release
     env:
       WORDCRAFT_VERSION: ${{ needs.version.outputs.version }}
