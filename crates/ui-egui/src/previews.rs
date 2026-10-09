@@ -49,9 +49,12 @@ impl Previews {
                 ui.painter().rect_filled(r, 3.0, t.hover);
             }
             let tex = tex.or_else(|| {
+                // `Context::input` and `Context::data_mut` share one non-reentrant lock, so the
+                // clock must be read before (not inside) the data closure; nesting them deadlocked
+                // the whole window when the font menu opened.
+                let now = ui.input(|i| i.time);
                 let n = ui.ctx().data_mut(|d| {
                     let c = d.get_temp_mut_or_default::<(f64, u32)>(egui::Id::new("font_preview_budget"));
-                    let now = ui.input(|i| i.time);
                     if c.0 != now {
                         *c = (now, 0);
                     }
@@ -294,4 +297,30 @@ pub fn table_style_tile(ui: &mut Ui, app: &mut WordApp, style: &str) -> Response
         ui.painter().image(h.id(), ir, uv, egui::Color32::WHITE);
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_menu_entries_render_without_locking_up() {
+        // The Home › Font dropdown draws one entry per installed family through
+        // `font_preview_fn`. Rendering an entry touches several egui context locks; nesting
+        // them deadlocked the whole window the moment the menu opened, so every entry must
+        // render cleanly inside a plain headless pass.
+        let names: Vec<String> = wordcraft_fonts::FontDb::global().families().into_iter().take(4).collect();
+        assert!(!names.is_empty(), "the bundled families are always listed");
+        let ctx = egui::Context::default();
+        let mut previews = Previews::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let show = previews.font_preview_fn();
+            for n in &names {
+                let r = show(ui, n);
+                assert!(r.rect.width() > 0.0 && r.rect.height() > 0.0);
+            }
+        });
+        // Headless: nobody applies texture uploads, so drop them explicitly.
+        out.textures_delta.clear();
+    }
 }
